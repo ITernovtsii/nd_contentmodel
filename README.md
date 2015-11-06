@@ -1,4 +1,4 @@
-Norse Digital Content Model extension
+Norse Digital Content Model extension for eZ Publish 4.x
 
 Installation
 -------------------
