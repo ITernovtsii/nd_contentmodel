@@ -15,6 +15,13 @@ class eZContentObject extends eZPersistentObject
      */
     protected $callbackAttributes = array();
 
+    /**
+     * @var array list of attributes that should be cached in runtime
+     */
+    protected $runtimeCachable = array();
+
+    protected $runtimeCacheStorage = array();
+
     const STATUS_DRAFT     = 0;
     const STATUS_PUBLISHED = 1;
     const STATUS_ARCHIVED  = 2;
@@ -38,7 +45,7 @@ class eZContentObject extends eZPersistentObject
     const RELATION_LINK      = 4;
     const RELATION_ATTRIBUTE = 8;
 
-    public function __construct($row)
+    public function eZContentObject($row)
     {
         $this->eZPersistentObject($row);
         $this->ClassIdentifier = false;
@@ -510,11 +517,11 @@ class eZContentObject extends eZPersistentObject
         $db->commit();
     }
 
-    /*!
-     \return a map with all the content object attributes where the keys are the
-             attribute identifiers.
-    */
-    function dataMap()
+    /**
+     * Map with all the content object attributes where the keys are the attribute identifiers.
+     * @return eZContentObjectAttribute[]
+     */
+    public function dataMap()
     {
         return $this->fetchDataMap();
     }
@@ -835,7 +842,7 @@ class eZContentObject extends eZPersistentObject
             }
 
             if ($asObject) {
-                $className = self::getClassName(
+                $className                              = self::getClassName(
                     isset($objectArray['contentclass_identifier']) ? $objectArray['contentclass_identifier'] : null
                 );
                 $obj                                    = new $className($objectArray);
@@ -966,10 +973,10 @@ class eZContentObject extends eZPersistentObject
 
         if ($asObject) {
 
-            $className = self::getClassName(
+            $className                                             = self::getClassName(
                 isset($objectArray['contentclass_identifier']) ? $objectArray['contentclass_identifier'] : null
             );
-            $obj                                    = new $className($objectArray);
+            $obj                                                   = new $className($objectArray);
             $eZContentObjectContentObjectCache[$objectArray['id']] = $obj;
         } else {
             return $objectArray;
@@ -1026,7 +1033,7 @@ class eZContentObject extends eZPersistentObject
             $objectID             = $resRow['id'];
             $resRow['class_name'] = eZContentClass::nameFromSerializedString($resRow['class_serialized_name_list']);
             if ($asObject) {
-                $className = self::getClassName(
+                $className                                    = self::getClassName(
                     isset($resRow['contentclass_identifier']) ? $resRow['contentclass_identifier'] : null
                 );
                 $obj                                          = new $className($resRow);
@@ -2878,7 +2885,7 @@ class eZContentObject extends eZPersistentObject
         $tmp = array();
         foreach ($relatedObjects as $object) {
             if ($asObject) {
-                $className = self::getClassName(
+                $className      = self::getClassName(
                     isset($object['contentclass_identifier']) ? $object['contentclass_identifier'] : null
                 );
                 $obj            = new $className($object);
@@ -3442,7 +3449,10 @@ class eZContentObject extends eZPersistentObject
         return $this->MainNodeID;
     }
 
-    function mainNode()
+    /**
+     * @return eZContentObjectTreeNode|null
+     */
+    public function mainNode()
     {
         return eZContentObjectTreeNode::findMainNode($this->attribute('id'), true);
     }
@@ -5780,13 +5790,6 @@ class eZContentObject extends eZPersistentObject
         $db->commit();
     }
 
-    public function attributes()
-    {
-        $attrs = parent::attributes();
-
-        return array_merge($attrs, $this->callbackAttributes);
-    }
-
     /**
      * @param string     $attr
      * @param bool|false $noFunction
@@ -5807,7 +5810,7 @@ class eZContentObject extends eZPersistentObject
      */
     public function hasAttribute($attr)
     {
-        return parent::hasAttribute($attr) && $this->hasCallAttribute($attr);
+        return parent::hasAttribute($attr) || $this->hasCallbackAttribute($attr);
     }
 
     /**
@@ -5825,7 +5828,16 @@ class eZContentObject extends eZPersistentObject
      */
     public function __get($name)
     {
-        if (isset($this->callbackAttributes[$name])) {
+        if ($this->hasCallbackAttribute($name)) {
+            if (
+                !array_key_exists($name, $this->runtimeCacheStorage)
+                && in_array($name, $this->runtimeCachable, true)
+            ) {
+                $this->runtimeCacheStorage[$name] = call_user_func(array($this, $this->callbackAttributes[$name]));
+
+                return $this->runtimeCacheStorage[$name];
+            }
+
             return call_user_func(array($this, $this->callbackAttributes[$name]));
         }
 
@@ -5836,9 +5848,18 @@ class eZContentObject extends eZPersistentObject
      * @param string $attr
      * @return bool
      */
-    public function hasCallAttribute($attr)
+    public function hasCallbackAttribute($attr)
     {
         return isset($this->callbackAttributes[$attr]);
+    }
+
+    /**
+     * @param string $method
+     * @return bool
+     */
+    public function hasCallbackMethod($method)
+    {
+        return in_array($method, $this->callbackAttributes, true);
     }
 
     public $ID;
